@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FlightWall</title>
+  <style>
+    :root {
+      --bg: #040609;
+      --panel: #0b1018;
+      --panel-border: rgba(255, 255, 255, 0.08);
+      --amber: #ffb82e;
+      --amber-glow: rgba(255, 184, 46, 0.35);
+      --cyan: #38bdf8;
+      --cyan-glow: rgba(56, 189, 248, 0.32);
+      --green: #22c55e;
+      --red: #fb7185;
+      --text: #f1f5f9;
+      --muted: #7c8ba1;
+      --dim: #465266;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+    }
+
+    /* Subtle LED dot-matrix texture — ultra-lightweight CSS for Chromecast Ultra */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+      background-size: 6px 6px;
+      z-index: 10;
+    }
+
+    /* Soft ambient radial vignette */
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(circle at 50% 42%, rgba(56, 189, 248, 0.06), transparent 62%);
+      z-index: 0;
+    }
+
+    .board {
+      position: relative;
+      z-index: 1;
+      width: 100vw;
+      height: 100vh;
+      padding: 2.6vh 3.2vw 2.2vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto auto;
+      gap: 2vh;
+      transition: transform 2s ease, opacity 0.35s ease;
+    }
+
+    .board.switching {
+      opacity: 0.72;
+    }
+
+    /* ---------------- TOP HEADER ---------------- */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--panel-border);
+      padding-bottom: 1.6vh;
+      gap: 2vw;
+    }
+
+    .airline-block {
+      display: flex;
+      align-items: center;
+      gap: 1.4vw;
+      min-width: 0;
+    }
+
+    .airline-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 4.8vw;
+      height: 5.4vh;
+      padding: 0 1vw;
+      border-radius: 0.8vh;
+      background: linear-gradient(135deg, rgba(255, 184, 46, 0.2), rgba(255, 184, 46, 0.08));
+      border: 1px solid rgba(255, 184, 46, 0.45);
+      color: var(--amber);
+      font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+      font-weight: 800;
+      font-size: clamp(18px, 2.7vh, 36px);
+      letter-spacing: 0.08em;
+      text-shadow: 0 0 14px var(--amber-glow);
+      flex-shrink: 0;
+    }
+
+    .airline-meta {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .airline-name {
+      font-size: clamp(18px, 3vh, 40px);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      line-height: 1.1;
+    }
+
+    .flight-sub {
+      font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+      font-size: clamp(12px, 1.85vh, 22px);
+      color: var(--cyan);
+      letter-spacing: 0.1em;
+      margin-top: 0.35vh;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .status-block {
+      display: flex;
+      align-items: center;
+      gap: 1.4vw;
+      flex-shrink: 0;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55vw;
+      padding: 0.7vh 1.1vw;
+      border-radius: 999px;
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+      font-size: clamp(11px, 1.75vh, 20px);
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .dot {
+      width: 1.1vh;
+      height: 1.1vh;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 10px var(--green);
+      animation: pulse 2.2s infinite ease-in-out;
+    }
+
+    .dot.warn {
+      background: var(--amber);
+      box-shadow: 0 0 10px var(--amber);
+    }
+
+    .dot.err {
+      background: var(--red);
+      box-shadow: 0 0 10px var(--red);
+    }
+
+    .clock {
+      font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+      font-size: clamp(20px, 3.2vh, 40px);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0.06em;
+    }
+
+    /* ---------------- HERO CENTERPIECE ---------------- */
+    .hero {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 0;
+    }
+
+    /* Commercial Route View */
+    .route-hero {
+      width: 100%;
+      display: grid;
+      grid-template-columns: minmax(18vw, 1fr) minmax(24vw, 1.25fr) minmax(18vw, 1fr);
+      align-items: center;
+      gap: 2.2vw;
+    }
+
+    .airport {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      min-width: 0;
+    }
+
+    .airport-code {
+      font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+      font-size: clamp(54px, 15.5vh, 180px);
+      font-weight: 900;
+      line-height: 0.92;
+      letter-spacing: 0.04em;
+      color: var(--amber);
+      text-shadow: 0 0 28px var(--amber-glow), 0 0 6px rgba(255, 184, 46, 0.5);
+    }
+
+    .airport-city {
+      margin-top: 1.5vh;
+      font-size: clamp(14px, 2.7vh, 34px);
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      max-width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .airport-country {
+      margin-top: 0.4vh;
+      font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+      font-size: clamp(11px, 1.7vh, 20px);
+      color: var(--muted);
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    .path-center {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2vh;
+    }
+
+    .proximity-tag {
+      font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+      font-size: clamp(13px, 2.2vh, 26px);
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--cyan);
+      text-transform: uppercase;
+      text-shadow: 0 0 14px var(--cyan-glow);
+    }
+
+    .track-wrap {
+      position: relative;
+      width: 100%;
+      height: 5.5vh;
+      display: flex;
+      align-items: center;
+    }
+
+    .track-line {
+      width: 100%;
+      height: 0.55vh;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .track-fill {
+      height: 100%;
+      width: 50%;
+      background: linear-gradient(90deg, rgba(56, 189, 248, 0.25), var(--cyan));
+      box-shadow: 0 0 14px var(--cyan-glow);
+      transition: width 1s ease;
+    }
+
+    .track-dot {
+      position: absolute;
+      width: 1.2vh;
+      height: 1.2vh;
+      border-radius: 50%;
+      background: var(--amber);
+      box-shadow: 0 0 8px var(--amber-glow);
+      top: 50%;
+      transform: translateY(-50%);
+    }
+
+    .track-dot.start { left: 0; }
+    .track-dot.end { right: 0; background: var(--dim); box-shadow: none; }
+
+    .plane-marker {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      transition: left 1s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      filter: drop-shadow(0 0 12px var(--cyan-glow));
+    }
+
+    .plane-marker svg {
+      width: clamp(28px, 5.2vh, 62px);
+      height: clamp(28px, 5.2vh, 62px);
+      fill: var(--text);
+    }
+
+    .aircraft-pill {
+      padding: 0.8vh 1.5vw;
+      border-radius: 0.9vh;
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      font-size: clamp(13px, 2.15vh, 26px);
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: 0.05em;
+      text-align: center;
+      max-width: 100%;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .aircraft-pill span {
+      color: var(--amber);
+      font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+      margin-right: 0.5vw;
+    }
+
+    /* Private / General Aviation View (no scheduled route) */
+    .ga-hero {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 1.8vh;
+    }
+
+    .ga-top {
+      display: flex;
+      align-items: center;
+      gap: 1.4vw;
+    }
+
+    .ga-icon svg {
+      width: clamp(36px, 7vh, 80px);
+      height: clamp(36px, 7vh, 80px);
+      fill: var(--cyan);
+      filter: drop-shadow(0 0 14px var(--cyan-glow));
+    }
+
+    .ga-callsign {
+      font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+      font-size: clamp(54px, 14.5vh, 168px);
+      font-weight: 900;
+      letter-spacing: 0.06em;
+      line-height: 0.95;
+      color: var(--amber);
+      text-shadow: 0 0 28px var(--amber-glow);
+    }
+
+    .ga-model {
+      font-size: clamp(18px, 3.4vh, 42px);
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .ga-owner {
+      font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+      font-size: clamp(13px, 2.2vh, 26px);
+      color: var(--cyan);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    /* Idle / No Aircraft View */
+    .idle-hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 2.2vh;
+    }
+
+    .radar-ring {
+      width: clamp(76px, 15vh, 160px);
+      height: clamp(76px, 15vh, 160px);
+      border-radius: 50%;
+      border: 2px solid rgba(56, 189, 248, 0.32);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .radar-ring::before {
+      content: "";
+      position: absolute;
+      inset: 18%;
+      border-radius: 50%;
+      border: 1px dashed rgba(56, 189, 248, 0.28);
+    }
+
+    .radar-sweep {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      background: conic-gradient(from 0deg, rgba(56, 189, 248, 0.35), transparent 65deg);
+      animation: spin 4.5s linear infinite;
+    }
+
+    .idle-title {
+      font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+      font-size: clamp(22px, 4.2vh, 48px);
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      color: var(--text);
+      text-transform: uppercase;
+    }
+
+    .idle-sub {
+      font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+      font-size: clamp(13px, 2.1vh, 24px);
+      color: var(--muted);
+      letter-spacing: 0.08em;
+    }
+
+    /* ---------------- TELEMETRY CARDS ---------------- */
+    .telemetry {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.5vw;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 1.2vh;
+      padding: 1.8vh 1.6vw;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 14.5vh;
+    }
+
+    .card-label {
+      font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+      font-size: clamp(11px, 1.65vh, 19px);
+      color: var(--muted);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .card-value {
+      font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+      font-size: clamp(24px, 4.4vh, 52px);
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: 0.03em;
+      line-height: 1.1;
+      margin-top: 0.6vh;
+      white-space: nowrap;
+    }
+
+    .card-value .unit {
+      font-size: 0.52em;
+      color: var(--muted);
+      font-weight: 600;
+      margin-left: 0.25em;
+    }
+
+    .card-sub {
+      font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+      font-size: clamp(11px, 1.75vh, 20px);
+      color: var(--cyan);
+      letter-spacing: 0.08em;
+      margin-top: 0.6vh;
+      display: flex;
+      align-items: center;
+      gap: 0.5vw;
+      white-space: nowrap;
+    }
+
+    .climb { color: var(--green); }
+    .descend { color: var(--red); }
+    .level { color: var(--muted); }
+
+    .heading-arrow {
+      display: inline-block;
+      width: 2.1vh;
+      height: 2.1vh;
+      transition: transform 0.8s ease;
+    }
+
+    /* ---------------- FOOTER / ALSO NEARBY ---------------- */
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid var(--panel-border);
+      padding-top: 1.3vh;
+      gap: 1.5vw;
+      font-family: "Consolas", "SFMono-Regular", Menlo, monospace;
+      font-size: clamp(11px, 1.7vh, 19px);
+      color: var(--muted);
+    }
+
+    .nearby-list {
+      display: flex;
+      align-items: center;
+      gap: 1.2vw;
+      overflow: hidden;
+      min-width: 0;
+    }
+
+    .nearby-label {
+      color: var(--dim);
+      letter-spacing: 0.12em;
+      flex-shrink: 0;
+    }
+
+    .nearby-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.55vw;
+      padding: 0.45vh 0.9vw;
+      border-radius: 0.6vh;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      white-space: nowrap;
+      color: var(--text);
+    }
+
+    .nearby-chip b {
+      color: var(--amber);
+      font-weight: 700;
+    }
+
+    .nearby-chip span {
+      color: var(--muted);
+    }
+
+    .source-tag {
+      color: var(--dim);
+      letter-spacing: 0.08em;
+      flex-shrink: 0;
+      text-transform: uppercase;
+    }
+
+    /* Optional PC Setup Bar (only shown with ?controls=1) */
+    .controls-bar {
+      position: fixed;
+      bottom: 14px;
+      right: 14px;
+      z-index: 50;
+      background: rgba(11, 16, 24, 0.95);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: none;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      font-size: 13px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+    }
+
+    .controls-bar.visible { display: flex; }
+
+    .controls-bar input, .controls-bar select {
+      background: #040609;
+      color: var(--text);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 6px;
+      padding: 5px 8px;
+      width: 96px;
+      font-family: monospace;
+    }
+
+    .controls-bar button {
+      background: var(--amber);
+      color: #040609;
+      border: none;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .hidden { display: none !important; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(0.85); }
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="board" id="board">
+    <!-- HEADER -->
+    <header class="header">
+      <div class="airline-block">
+        <div class="airline-badge" id="airlineBadge">FW</div>
+        <div class="airline-meta">
+          <div class="airline-name" id="airlineName">FLIGHTWALL</div>
+          <div class="flight-sub" id="flightSub">INITIALIZING RADAR...</div>
+        </div>
+      </div>
+      <div class="status-block">
+        <div class="pill">
+          <span class="dot" id="statusDot"></span>
+          <span id="statusText">LIVE</span>
+        </div>
+        <div class="pill" id="countPill">0 IN RANGE</div>
+        <div class="clock" id="clock">--:--</div>
+      </div>
+    </header>
+
+    <!-- HERO -->
+    <main class="hero">
+      <!-- Commercial Route View -->
+      <section class="route-hero hidden" id="routeHero">
+        <div class="airport">
+          <div class="airport-code" id="origCode">---</div>
+          <div class="airport-city" id="origCity">---</div>
+          <div class="airport-country" id="origCountry"></div>
+        </div>
+
+        <div class="path-center">
+          <div class="proximity-tag" id="routeProximity">CLOSEST OVERHEAD</div>
+          <div class="track-wrap">
+            <div class="track-line">
+              <div class="track-fill" id="trackFill"></div>
+            </div>
+            <div class="track-dot start"></div>
+            <div class="track-dot end"></div>
+            <div class="plane-marker" id="planeMarker">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" transform="rotate(90 12 12)"/>
+              </svg>
+            </div>
+          </div>
+          <div class="aircraft-pill" id="routeAircraft"><span>---</span>Aircraft</div>
+        </div>
+
+        <div class="airport">
+          <div class="airport-code" id="destCode">---</div>
+          <div class="airport-city" id="destCity">---</div>
+          <div class="airport-country" id="destCountry"></div>
+        </div>
+      </section>
+
+      <!-- General Aviation / Private / No-Route View -->
+      <section class="ga-hero hidden" id="gaHero">
+        <div class="ga-top">
+          <div class="ga-icon" id="gaIcon">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
+            </svg>
+          </div>
+          <div class="ga-callsign" id="gaCallsign">---</div>
+        </div>
+        <div class="ga-model" id="gaModel">AIRCRAFT</div>
+        <div class="ga-owner" id="gaOwner">PRIVATE / UNSCHEDULED</div>
+      </section>
+
+      <!-- Clear Skies / Idle View -->
+      <section class="idle-hero" id="idleHero">
+        <div class="radar-ring">
+          <div class="radar-sweep"></div>
+        </div>
+        <div class="idle-title" id="idleTitle">SCANNING LOCAL SKIES</div>
+        <div class="idle-sub" id="idleSub">WAITING FOR NEARBY AIRCRAFT...</div>
+      </section>
+    </main>
+
+    <!-- TELEMETRY -->
+    <section class="telemetry" id="telemetryGrid">
+      <div class="card">
+        <div class="card-label">Distance</div>
+        <div class="card-value" id="valDist">--<span class="unit" id="unitDist">MI</span></div>
+        <div class="card-sub" id="subDist">BEARING --</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Altitude</div>
+        <div class="card-value" id="valAlt">--<span class="unit" id="unitAlt">FT</span></div>
+        <div class="card-sub level" id="subAlt">● LEVEL</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Ground Speed</div>
+        <div class="card-value" id="valSpeed">--<span class="unit" id="unitSpeed">KTS</span></div>
+        <div class="card-sub" id="subSpeed">-- MPH</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Heading</div>
+        <div class="card-value" id="valHeading">--<span class="unit">°</span></div>
+        <div class="card-sub">
+          <svg class="heading-arrow" id="headingArrow" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2L19 21L12 17L5 21L12 2Z"/>
+          </svg>
+          <span id="subHeading">TRACK --</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="footer">
+      <div class="nearby-list" id="nearbyList">
+        <span class="nearby-label">ALSO NEARBY</span>
+        <span style="color: var(--dim)">Scanning...</span>
+      </div>
+      <div class="source-tag" id="sourceTag">ADSB</div>
+    </footer>
+  </div>
+
+  <!-- Optional PC Controls Overlay (?controls=1) -->
+  <div class="controls-bar" id="controlsBar">
+    <label>Lat <input id="inLat" type="text" /></label>
+    <label>Lon <input id="inLon" type="text" /></label>
+    <label>Radius (nm) <input id="inRadius" type="number" style="width:68px" /></label>
+    <select id="inUnits" style="width:94px">
+      <option value="imperial">Imperial</option>
+      <option value="metric">Metric</option>
+    </select>
+    <button id="btnApply">Apply</button>
+  </div>
+
+  <script>
+    (function () {
+      const qs = new URLSearchParams(window.location.search);
+      const cfg = {
+        lat: qs.get("lat"),
+        lon: qs.get("lon"),
+        radius: qs.get("radius"),
+        units: (qs.get("units") || "imperial").toLowerCase(),
+        commercial: qs.get("commercial") || qs.get("commercial_only") || "",
+        poll: Math.max(5, parseInt(qs.get("poll") || "10", 10) || 10),
+        controls: qs.get("controls") === "1"
+      };
+
+      const $ = (id) => document.getElementById(id);
+      let lastHex = null;
+      let failCount = 0;
+
+      // Clock updater
+      function updateClock() {
+        const now = new Date();
+        const h = String(now.getHours()).padStart(2, "0");
+        const m = String(now.getMinutes()).padStart(2, "0");
+        $("clock").textContent = h + ":" + m;
+      }
+      updateClock();
+      setInterval(updateClock, 15000);
+
+      // Subtle OLED burn-in protection shift every 60s
+      let shiftStep = 0;
+      const shifts = [[0, 0], [2, 1], [-2, 1], [1, -2], [-1, -1]];
+      setInterval(() => {
+        shiftStep = (shiftStep + 1) % shifts.length;
+        const [x, y] = shifts[shiftStep];
+        $("board").style.transform = `translate(${x}px, ${y}px)`;
+      }, 60000);
+
+      // Periodic clean reload every 12h to keep Chromecast Ultra RAM spotless 24/7
+      setTimeout(() => window.location.reload(), 12 * 60 * 60 * 1000);
+
+      // Optional PC controls bar (?controls=1)
+      if (cfg.controls) {
+        $("controlsBar").classList.add("visible");
+        $("inLat").value = cfg.lat || "";
+        $("inLon").value = cfg.lon || "";
+        $("inRadius").value = cfg.radius || "25";
+        $("inUnits").value = cfg.units;
+        $("btnApply").addEventListener("click", () => {
+          const next = new URLSearchParams();
+          if ($("inLat").value.trim()) next.set("lat", $("inLat").value.trim());
+          if ($("inLon").value.trim()) next.set("lon", $("inLon").value.trim());
+          if ($("inRadius").value.trim()) next.set("radius", $("inRadius").value.trim());
+          next.set("units", $("inUnits").value);
+          next.set("controls", "1");
+          window.location.search = next.toString();
+        });
+      }
+
+      function esc(str) {
+        return String(str == null ? "" : str)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function fmtNum(n) {
+        if (n === null || n === undefined || Number.isNaN(n)) return "--";
+        return Math.round(n).toLocaleString("en-US");
+      }
+
+      function buildApiUrl() {
+        const p = new URLSearchParams();
+        if (cfg.lat) p.set("lat", cfg.lat);
+        if (cfg.lon) p.set("lon", cfg.lon);
+        if (cfg.radius) p.set("radius", cfg.radius);
+        if (cfg.commercial) p.set("commercial_only", cfg.commercial);
+        const q = p.toString();
+        return "/api/closest" + (q ? "?" + q : "");
+      }
+
+      function setStatus(state, label) {
+        const dot = $("statusDot");
+        dot.className = "dot" + (state === "warn" ? " warn" : state === "err" ? " err" : "");
+        $("statusText").textContent = label;
+      }
+
+      function renderIdle(data) {
+        $("routeHero").classList.add("hidden");
+        $("gaHero").classList.add("hidden");
+        $("idleHero").classList.remove("hidden");
+
+        $("airlineBadge").textContent = "FW";
+        $("airlineName").textContent = "FLIGHTWALL";
+        const rNm = data && data.query ? data.query.radius_nm : (cfg.radius || 25);
+        $("flightSub").textContent = `MONITORING ${rNm} NM RADIUS`;
+        $("idleTitle").textContent = "CLEAR SKIES OVERHEAD";
+        $("idleSub").textContent = `NO AIRCRAFT WITHIN ${rNm} NM · POLLING EVERY ${cfg.poll}S`;
+
+        $("valDist").innerHTML = `--<span class="unit">${cfg.units === "metric" ? "KM" : "MI"}</span>`;
+        $("subDist").textContent = "BEARING --";
+        $("valAlt").innerHTML = `--<span class="unit">${cfg.units === "metric" ? "M" : "FT"}</span>`;
+        $("subAlt").className = "card-sub level";
+        $("subAlt").textContent = "● STANDBY";
+        $("valSpeed").innerHTML = `--<span class="unit">${cfg.units === "metric" ? "KM/H" : "KTS"}</span>`;
+        $("subSpeed").textContent = "--";
+        $("valHeading").innerHTML = `--<span class="unit">°</span>`;
+        $("subHeading").textContent = "TRACK --";
+        $("headingArrow").style.transform = "rotate(0deg)";
+
+        $("nearbyList").innerHTML = '<span class="nearby-label">ALSO NEARBY</span><span style="color:var(--dim)">None in range</span>';
+      }
+
+      function renderFlight(data) {
+        const f = data.closest;
+        const t = f.telemetry || {};
+        const ac = f.aircraft || {};
+        const al = f.airline || {};
+        const rt = f.route || null;
+        const metric = cfg.units === "metric";
+
+        if (lastHex && lastHex !== f.hex) {
+          $("board").classList.add("switching");
+          setTimeout(() => $("board").classList.remove("switching"), 320);
+        }
+        lastHex = f.hex;
+
+        // Header
+        const badgeText = al.iata || al.icao || (f.callsign ? f.callsign.slice(0, 3) : ac.code || "AC");
+        $("airlineBadge").textContent = badgeText.toUpperCase().slice(0, 4);
+
+        const displayAirline = al.name || ac.owner || (rt ? "COMMERCIAL FLIGHT" : "PRIVATE / GENERAL AVIATION");
+        $("airlineName").textContent = displayAirline;
+
+        const subParts = [];
+        if (f.flight_iata && f.flight_iata !== f.callsign) subParts.push(f.flight_iata);
+        if (f.callsign) subParts.push(f.callsign);
+        if (f.registration && f.registration !== f.callsign) subParts.push("REG " + f.registration);
+        if (t.squawk) subParts.push("SQK " + t.squawk);
+        $("flightSub").textContent = subParts.join(" · ") || f.hex.toUpperCase();
+
+        // Hero section
+        const distVal = metric ? t.distance_km : t.distance_mi;
+        const distUnit = metric ? "KM" : "MI";
+        const distStr = distVal !== null && distVal !== undefined ? distVal.toFixed(1) : "--";
+
+        if (rt && rt.origin && rt.destination && rt.origin.iata && rt.destination.iata) {
+          $("idleHero").classList.add("hidden");
+          $("gaHero").classList.add("hidden");
+          $("routeHero").classList.remove("hidden");
+
+          $("origCode").textContent = rt.origin.iata;
+          $("origCity").textContent = rt.origin.city || rt.origin.name || "";
+          $("origCountry").textContent = rt.origin.country || "";
+
+          $("destCode").textContent = rt.destination.iata;
+          $("destCity").textContent = rt.destination.city || rt.destination.name || "";
+          $("destCountry").textContent = rt.destination.country || "";
+
+          $("routeProximity").textContent = `${distStr} ${distUnit} · ${t.bearing_cardinal || "--"} OF YOU`;
+
+          const pct = typeof rt.progress_pct === "number" ? Math.max(6, Math.min(94, rt.progress_pct)) : 50;
+          $("trackFill").style.width = pct + "%";
+          $("planeMarker").style.left = pct + "%";
+
+          const codeSpan = ac.code ? `<span>${esc(ac.code)}</span>` : "";
+          $("routeAircraft").innerHTML = codeSpan + esc(ac.model || "AIRCRAFT");
+        } else {
+          $("idleHero").classList.add("hidden");
+          $("routeHero").classList.add("hidden");
+          $("gaHero").classList.remove("hidden");
+
+          $("gaCallsign").textContent = f.flight_iata || f.callsign || f.registration || f.hex.toUpperCase();
+          const modelLabel = [ac.code, ac.model].filter(Boolean).join(" · ") || "AIRCRAFT";
+          $("gaModel").textContent = modelLabel;
+          const ownerLabel = al.name || ac.owner || "UNSCHEDULED / LOCAL FLIGHT";
+          $("gaOwner").textContent = `${ownerLabel}  ·  ${distStr} ${distUnit} ${t.bearing_cardinal || ""}`;
+        }
+
+        // Telemetry cards
+        $("valDist").innerHTML = `${distStr}<span class="unit">${distUnit}</span>`;
+        $("subDist").textContent = t.bearing_deg !== null && t.bearing_deg !== undefined
+          ? `BEARING ${Math.round(t.bearing_deg)}° ${t.bearing_cardinal || ""}`
+          : "BEARING --";
+
+        if (metric) {
+          $("valAlt").innerHTML = `${fmtNum(t.altitude_m)}<span class="unit">M</span>`;
+        } else {
+          $("valAlt").innerHTML = `${fmtNum(t.altitude_ft)}<span class="unit">FT</span>`;
+        }
+
+        const vr = t.vert_rate_fpm || 0;
+        if (vr > 150) {
+          $("subAlt").className = "card-sub climb";
+          $("subAlt").textContent = `▲ +${fmtNum(vr)} FPM`;
+        } else if (vr < -150) {
+          $("subAlt").className = "card-sub descend";
+          $("subAlt").textContent = `▼ ${fmtNum(vr)} FPM`;
+        } else {
+          $("subAlt").className = "card-sub level";
+          $("subAlt").textContent = "● CRUISING / LEVEL";
+        }
+
+        if (metric) {
+          $("valSpeed").innerHTML = `${fmtNum(t.speed_kmh)}<span class="unit">KM/H</span>`;
+          $("subSpeed").textContent = `${fmtNum(t.speed_kts)} KTS`;
+        } else {
+          $("valSpeed").innerHTML = `${fmtNum(t.speed_kts)}<span class="unit">KTS</span>`;
+          $("subSpeed").textContent = `${fmtNum(t.speed_mph)} MPH`;
+        }
+
+        if (t.track_deg !== null && t.track_deg !== undefined) {
+          const deg = Math.round(t.track_deg);
+          $("valHeading").innerHTML = `${String(deg).padStart(3, "0")}<span class="unit">°</span>`;
+          $("subHeading").textContent = `TRACK ${t.track_cardinal || "--"}`;
+          $("headingArrow").style.transform = `rotate(${deg}deg)`;
+        } else {
+          $("valHeading").innerHTML = `--<span class="unit">°</span>`;
+          $("subHeading").textContent = "TRACK --";
+        }
+
+        // Also nearby chips
+        const list = $("nearbyList");
+        const others = (data.nearby || []).slice(0, 3);
+        if (others.length === 0) {
+          list.innerHTML = '<span class="nearby-label">ALSO NEARBY</span><span style="color:var(--dim)">Only aircraft in range</span>';
+        } else {
+          let html = '<span class="nearby-label">ALSO NEARBY</span>';
+          for (const o of others) {
+            const d = metric ? (o.distance_km != null ? o.distance_km.toFixed(1) + " km" : "--") : (o.distance_mi != null ? o.distance_mi.toFixed(1) + " mi" : "--");
+            const alt = metric ? (o.altitude_m != null ? fmtNum(o.altitude_m) + "m" : "") : (o.altitude_ft != null ? fmtNum(o.altitude_ft) + "ft" : "");
+            const tag = o.route_short ? `${o.callsign} (${o.route_short})` : o.callsign;
+            html += `<span class="nearby-chip"><b>${esc(tag)}</b><span>${esc(d)}${alt ? " · " + esc(alt) : ""}</span></span>`;
+          }
+          list.innerHTML = html;
+        }
+      }
+
+      async function poll() {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8500);
+        try {
+          const res = await fetch(buildApiUrl(), { cache: "no-store", signal: controller.signal });
+          clearTimeout(timer);
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const data = await res.json();
+          failCount = 0;
+
+          if (!cfg.lat && data.query && cfg.controls) {
+            $("inLat").value = data.query.lat;
+            $("inLon").value = data.query.lon;
+            $("inRadius").value = data.query.radius_nm;
+          }
+
+          const count = data.total_nearby || 0;
+          $("countPill").textContent = `${count} IN RANGE`;
+          $("sourceTag").textContent = `${(data.source || "ADSB").toUpperCase()} · ${data.query ? data.query.radius_nm : 25} NM`;
+          setStatus("ok", "LIVE");
+
+          if (data.closest) {
+            renderFlight(data);
+          } else {
+            renderIdle(data);
+          }
+        } catch (err) {
+          clearTimeout(timer);
+          failCount++;
+          setStatus(failCount >= 3 ? "err" : "warn", failCount >= 3 ? "OFFLINE" : "RETRYING");
+        }
+      }
+
+      poll();
+      setInterval(poll, cfg.poll * 1000);
+    })();
+  </script>
+</body>
+</html>

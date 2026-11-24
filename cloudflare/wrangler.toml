@@ -1,0 +1,9 @@
+name = "flightwall-chromecast"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+[vars]
+DEFAULT_LAT = "43.6532"
+DEFAULT_LON = "-79.3832"
+DEFAULT_RADIUS_NM = "25"
+DEFAULT_COMMERCIAL_ONLY = "false"
